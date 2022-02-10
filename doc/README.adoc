@@ -1,0 +1,183 @@
+// To get include::-s working on GitHub use asciidoctor-reducer on the file
+// ./doc/README.adoc in order to generate ./README.adoc
+= Unicode in Fortran
+
+== Introduction
+
+WARNING:: The following examples are based on my own experiences and testing.
+    I'm neither a Unicode expert nor a compiler maintainer.
+    If you find anything wrong with the examples please open an
+    https://github.com/plevold/unicode-in-fortran/issues[issue].
+
+Using Unicode characters in you programs is not necessarily hard.
+There is however very little information about Fortran and Unicode available.
+This repository is a collection of examples and some explanations on how
+to use Unicode in Fortran.
+
+Most of what is written here is based on recommendations from
+the http://utf8everywhere.org/[UTF-8 Everywhere Manifesto].
+I would highly recommend that you read that as well to get a better understanding
+of what Unicode is and is not.
+
+== Compilers
+
+The examples used here have been verified to work on the following compiler/OS
+combinations:
+
+|===
+| Compiler | Version | Operating System | Status
+| gfortran | 9.3.0   | Linux            | ✅
+|          | 10.3.0  | Windows 10       | ✅
+| ifort    | 2021.5.0| Linux            | ✅
+|===
+
+== Creating and Printing Unicode Strings
+
+First, make sure that
+
+* Your terminal emulator is set to UTF-8.
+* Your source file encoding is set to UTF-8.
+
+With the notable exception of Windows CMD and PowerShell, UTF-8 is probably the default
+encoding in your terminal.
+If you're using Windows CMD or PowerShell you need to use a modern terminal emulator
+like https://github.com/microsoft/terminal[Windows Terminal] and follow the instructions
+https://akr.am/blog/posts/using-utf-8-in-the-windows-terminal[here].
+If that's too much hassle you can consider switching to
+https://gitforwindows.org/[Git for Windows] instead which will give you a nice Bash
+terminal on Windows.
+
+With that in place insert unicode characters directly into a string literal in your
+source code.
+If you're using Visual Studio Code there's an https://marketplace.visualstudio.com/items?itemName=brunnerh.insert-unicode[extension]
+that can help you with inserting Unicode characters in your source files.
+Using escape sequences like `\u1F525` requires setting special compiler flags and
+different compilers seems to handle this somewhat differently.
+Unless you know for sure that you want to stick with one compiler forever I would
+not recommend doing this.
+
+If you're storing it in a variable, use the default character kind _or_ `c_char`
+form `iso_c_binding`.
+*Do not* try to use e.g. `selected_char_kind('ISO_10646')` to create "wide" (longer than one byte)
+characters.
+For one thing, Intel Fortran does as of this writing not support this.
+Also if you're going to pass character arguments to procedures you'll either have to do
+conversion between the default and the `ISO_10646` character kinds or you need to
+have two versions of each procedure that might need to accept both wide and default
+character kinds.
+As we will later see, this is never really needed so you will only create extra work
+for yourself.
+
+*Example:*
+[source,fortran]
+----
+include::../example/write_to_console.f90[]
+----
+
+This should output
+
+[source]
+----
+❯ fpm run --example write_to_console
+ Fortran is 💪, 😎, 🔥!
+----
+
+As we can see from in output from the example above the emojis are printed like we
+inserted them in the source file.
+
+
+== Determining the Length of a Unicode String
+
+Some might be confused by that
+
+[source,fortran]
+----
+include::../example/unicode_len.f90[]
+----
+
+outputs
+
+[source]
+----
+❯ fpm run --example unicode_len
+          28
+----
+
+while if we manually count the number of character we see in the string literal
+then we end up 19 character.
+This is because in Unicode what we perceive as one character might consist of
+multiple bytes.
+This is referred to as a _grapheme cluster_ and is crucial when rendering text.
+Determining the number of grapheme clusters and their width when rendered on the
+screen is a complex task which we will not go into here.
+For more information see the http://utf8everywhere.org/#characters[UTF-8 Everywhere Manifesto]
+and https://hsivonen.fi/string-length/[It's Not Wrong that "🤦🏼‍♂️".length == 7].
+
+We're mainly concerned about storing the characters in memory though, as our
+terminal emulator or text editor takes care of displaying the results on our screen.
+For this it is useful to think of the character variable as a sequence of bytes
+rather than a sequence of what we perceive as one character.
+When `len(chars) == 28` that means that we need 28 elements in our variable to
+store the string.
+
+== Searching for Substrings
+
+Substrings can be searched for using the regular `index` intrinsic just like
+strings with just ASCII characters:
+
+[source,fortran]
+----
+include::../example/unicode_index.f90[]
+----
+
+outputs
+
+[source]
+----
+❯ fpm run --example unicode_index
+          14 n
+          18 ¹
+----
+
+There is no need for any special handling thanks to the design of Unicode:
+
+[quote,'http://utf8everywhere.org/#textops[UTF-8 Everywhere Manifesto]']
+Also, you can search for a non-ASCII, UTF-8 encoded substring in a UTF-8 string as if it was a plain byte array—there is no need to mind code point boundaries. This is thanks to another design feature of UTF-8 — a leading byte of an encoded code point can never hold value corresponding to one of trailing bytes of any other code point.
+
+Keep in mind though that what looks like a single character (a grapheme cluster)
+might be more than one byte long so `chars(i:i)` will not necessarily output the
+complete match.
+
+== Reading and Writing to File
+
+Reading and writing Unicode characters from and to a file is as easy as writing ASCII text:
+
+[source,fortran]
+----
+include::../example/file_io.f90[]
+----
+
+The `open` statement in Fortran allows to one to specify `encoding='UTF-8'`.
+In testing with `ifort` and `gfortran` however this does not seem to have any
+impact on the file written.
+Specifying `encoding` does for example not seem to add a
+https://en.wikipedia.org/wiki/Byte_order_mark[Byte Order Mark (BOM)] neither
+with `gfortran` nor `ifort`.
+
+== Conclusion
+
+We've seen that using Unicode characters in Fortran is actually not that hard!
+One need to remember that what we perceive as a character is not necessarily
+a single element in our character variables.
+Apart from that using Unicode characters in Fortran should really be quite
+straight forward.
+
+== Contributing
+
+If you've tested these examples with other compiler/OS combinations than listed
+on the top, feel free to submit a https://github.com/plevold/unicode-in-fortran/pulls[pull request]
+and add it to the list.
+
+If you're having problems with some of the examples posted here feel free open an
+https://github.com/plevold/unicode-in-fortran/issues[issue] so that we can
+collectively keep the information correct and up to date.
